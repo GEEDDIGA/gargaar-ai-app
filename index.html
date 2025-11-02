@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gargaar - Technology Tutor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; background:#f7f9fb; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+    .profile-img { width:32px; height:32px; border-radius:50%; object-fit:cover; border:2px solid #fff; }
+  </style>
+</head>
+<body class="p-4 sm:p-8">
+  <div class="max-w-xl w-full mx-auto bg-white shadow-2xl rounded-xl overflow-hidden border border-indigo-200">
+    <header class="bg-indigo-600 text-white p-4 sm:p-6 flex justify-between items-center">
+      <h1 class="text-2xl sm:text-3xl font-extrabold flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 sm:h-8 sm:w-8 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        Gargaar
+      </h1>
+      <div id="auth-container" class="flex items-center space-x-2"></div>
+    </header>
+
+    <div class="p-6 sm:p-8">
+      <h2 class="text-2xl font-bold text-gray-800 border-b pb-3 mb-6">Technology Lessons (Powered by Gemini)</h2>
+      <div class="bg-indigo-50 p-5 rounded-lg border border-indigo-200">
+        <p class="text-gray-700 mb-4 font-medium">Please enter a short lesson topic focusing only on <strong>Technology</strong> or <strong>Digital Skills</strong>. E.g.: <strong>"What is a server?"</strong> or <strong>"How to start Coding."</strong></p>
+        <label for="lesson-query" class="block text-gray-700 font-semibold mb-2">Technology Lesson Topic:</label>
+        <textarea id="lesson-query" class="w-full p-3 border border-indigo-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" rows="3" placeholder="Example: How does the Internet work?"></textarea>
+        <button onclick="generateLesson()" class="mt-4 w-full px-6 py-3 bg-red-600 text-white font-semibold rounded-lg shadow-lg hover:bg-red-700 transition duration-200 flex items-center justify-center" id="lesson-button" disabled>
+          <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          Initializing...
+        </button>
+        <div id="lesson-result" class="mt-6 p-4 bg-white border border-red-300 rounded-lg shadow-md hidden">
+          <h3 class="font-bold text-red-700 mb-3 text-xl border-b pb-2">Technology Lesson:</h3>
+          <div id="lesson-text" class="text-gray-700 text-base leading-relaxed"></div>
+        </div>
+        <p id="lesson-error-message" class="mt-4 text-red-500 hidden font-medium text-sm"></p>
+      </div>
+    </div>
+
+    <footer class="p-4 text-center text-xs text-gray-400 border-t">This service is powered by Gemini AI and Firebase Auth.</footer>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=';
+    const apiKey = ""; // Canvas will provide at runtime
+
+    let app; let auth; let isAuthReady = false;
+
+    const authContainer = document.getElementById('auth-container');
+    const lessonResultDiv = document.getElementById('lesson-result');
+    const lessonTextDiv = document.getElementById('lesson-text');
+    const lessonQueryInput = document.getElementById('lesson-query');
+    const lessonButton = document.getElementById('lesson-button');
+    const lessonErrorMessage = document.getElementById('lesson-error-message');
+
+    setLogLevel('debug');
+
+    if (Object.keys(firebaseConfig).length > 0) {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+
+      const handleInitialAuth = async () => {
+        try {
+          if (initialAuthToken) {
+            await signInWithCustomToken(auth, initialAuthToken);
+          } else {
+            await signInAnonymously(auth);
+          }
+        } catch (error) {
+          try { await signInAnonymously(auth); } catch {}
+        }
+      };
+      handleInitialAuth();
+
+      onAuthStateChanged(auth, (user) => {
+        if (user && user.isAnonymous === false) {
+          updateAuthUI(user);
+          lessonButton.disabled = false;
+        } else if (user && user.isAnonymous === true) {
+          updateAuthUI(null);
+          lessonButton.disabled = false;
+        } else {
+          updateAuthUI(null);
+          lessonButton.disabled = true;
+        }
+        isAuthReady = true;
+        lessonButton.disabled = false;
+        setButtonState(false);
+      });
+
+      window.signInWithGoogle = async () => {
+        const provider = new GoogleAuthProvider();
+        try {
+          await signInWithPopup(auth, provider);
+        } catch (error) {
+          alertMessage('Please try again, sign-in failed.');
+        }
+      };
+
+      window.signOutUser = async () => {
+        try {
+          await signOut(auth);
+          await signInAnonymously(auth);
+        } catch (error) {
+          alertMessage('Please try again, sign-out failed.');
+        }
+      };
+
+    } else {
+      isAuthReady = true;
+      lessonButton.disabled = false;
+      updateAuthUI(null);
+      setButtonState(false);
+    }
+
+    function updateAuthUI(user) {
+      authContainer.innerHTML = '';
+      if (user && user.photoURL) {
+        authContainer.innerHTML = `
+          <button onclick="signOutUser()" class="flex items-center space-x-2 p-2 bg-indigo-700 rounded-full hover:bg-indigo-800 transition">
+            <img src="${user.photoURL}" alt="Profile" class="profile-img">
+            <span class="hidden sm:inline text-sm text-white font-medium">Sign Out</span>
+          </button>`;
+      } else {
+        authContainer.innerHTML = `
+          <button onclick="signInWithGoogle()" class="px-3 py-1 bg-white text-indigo-600 font-semibold rounded-full shadow hover:bg-gray-100 transition text-sm">
+            Sign In (Google)
+          </button>`;
+      }
+    }
+
+    function alertMessage(message) {
+      lessonErrorMessage.textContent = message;
+      lessonErrorMessage.classList.remove('hidden');
+      setTimeout(() => { lessonErrorMessage.classList.add('hidden'); }, 5000);
+    }
+
+    function setButtonState(isLoading) {
+      const text = 'Generate Lesson (Gemini AI)';
+      lessonButton.disabled = isLoading;
+      let iconHtml = '<svg id="lesson-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd" /></svg>';
+      lessonButton.innerHTML = isLoading
+        ? '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...'
+        : iconHtml + ' ' + text;
+    }
+
+    function markdownToHtml(markdownText) {
+      let html = markdownText;
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html = html.replace(/^\*\s*(.*)$/gm, '<li>$1</li>');
+      html = html.replace(/^(<li>.*<\/li>(<br>)?)+/gm, '<ul class="list-disc ml-5 mb-3">$&\n<\/ul>');
+      html = html.replace(/<br>/g, '');
+      html = html.replace(/\n\s*\n/g, '</p><p>');
+      html = `<p>${html}</p>`;
+      html = html.replace(/<\/p><ul/g, '<ul>');
+      html = html.replace(/<\/li><\/ul><p>/g, '</li></ul>');
+      html = html.replace(/<\/li><\/ul> <p>/g, '</li></ul>');
+      return html;
+    }
+
+    window.generateLesson = async () => {
+      if (!isAuthReady) { alertMessage('Please wait while the system is initializing.'); return; }
+      const query = lessonQueryInput.value.trim();
+      if (!query) { alertMessage('Please enter a technology lesson topic.'); return; }
+
+      const systemPrompt = "You are a professional Technology Tutor. Prepare a concise lesson for students consisting of 3-5 key points, strictly focusing on the fundamentals of Modern Technology (e.g., AI, Coding, Cybersecurity, Cloud, Digital Marketing, Hardware/Software). You must reject non-technology queries. The lesson should be practical and market-oriented. The entire response must be in English.";
+
+      lessonErrorMessage.classList.add('hidden');
+      lessonResultDiv.classList.add('hidden');
+      lessonTextDiv.innerHTML = '';
+      setButtonState(true);
+
+      const payload = {
+        contents: [{ parts: [{ text: query }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+      };
+
+      const maxRetries = 3;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(API_URL + apiKey, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+          });
+          if (!response.ok) throw new Error(`API response status: ${response.status}`);
+          const result = await response.json();
+          const text = result.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, no response could be retrieved.';
+          lessonTextDiv.innerHTML = markdownToHtml(text);
+          lessonResultDiv.classList.remove('hidden');
+          setButtonState(false);
+          return;
+        } catch (error) {
+          if (attempt < maxRetries - 1) {
+            const delay = Math.pow(2, attempt) * 1000; await new Promise(r => setTimeout(r, delay));
+          } else {
+            alertMessage('Please try again, an internet or service connection error occurred.');
+            setButtonState(false);
+          }
+        }
+      }
+    };
+  </script>
+</body>
+</html>
